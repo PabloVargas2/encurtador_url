@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Encurtador de URLs</title>
+  <style>
+    :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #5f6878; --accent: #2457d6; --error: #b42318; --border: #d8dce3; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #14171d; --card: #1e222b; --text: #e8eaef; --muted: #9aa3b2; --accent: #6d95ff; --error: #ff8a80; --border: #343a46; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    main { width: 100%; max-width: 520px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+    h1 { margin: 0 0 4px; font-size: 1.5rem; }
+    p.sub { margin: 0 0 24px; color: var(--muted); }
+    label { display: block; font-size: .9rem; margin: 14px 0 6px; }
+    input { width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; }
+    button { margin-top: 20px; width: 100%; padding: 11px; font: inherit; font-weight: 600; color: #fff;
+      background: var(--accent); border: 0; border-radius: 8px; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #result { margin-top: 20px; word-break: break-all; }
+    #result a { color: var(--accent); font-weight: 600; }
+    .error { color: var(--error); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Encurtador de URLs</h1>
+    <p class="sub">Cole um endereço longo e receba um link curto.</p>
+    <form id="form">
+      <label for="url">URL</label>
+      <input id="url" name="url" type="url" placeholder="https://exemplo.com/pagina-muito-longa" required>
+      <label for="alias">Apelido (opcional)</label>
+      <input id="alias" name="alias" type="text" placeholder="meu-link" pattern="[A-Za-z0-9_\-]{3,32}">
+      <button type="submit">Encurtar</button>
+    </form>
+    <div id="result" aria-live="polite"></div>
+  </main>
+  <script>
+    const form = document.getElementById('form');
+    const result = document.getElementById('result');
+    const button = form.querySelector('button');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      result.textContent = '';
+      try {
+        const response = await fetch('/api/links', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: form.url.value, alias: form.alias.value.trim() }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Erro ao encurtar');
+        const link = document.createElement('a');
+        link.href = data.shortUrl;
+        link.target = '_blank';
+        link.textContent = data.shortUrl;
+        result.append('Seu link: ', link);
+        form.reset();
+      } catch (err) {
+        result.innerHTML = '';
+        const msg = document.createElement('span');
+        msg.className = 'error';
+        msg.textContent = err.message;
+        result.append(msg);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
