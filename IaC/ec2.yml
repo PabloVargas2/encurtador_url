@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Provisionamento de instância EC2 para aplicação do projeto de CI
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+  InstanceType:
+    Type: String
+    Default: t3.micro
+  SshCidr:
+    Type: String
+    Default: 0.0.0.0/0
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+
+Resources:
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SshCidr
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - !Ref AppSecurityGroup
+      Tags:
+        - Key: Name
+          Value: encurtador-url
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -e
+          apt-get update
+          apt-get install -y git curl
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+          npm install -g pm2
+
+  AppElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref AppInstance
+
+Outputs:
+  PublicIp:
+    Value: !Ref AppElasticIp
+  PublicDns:
+    Value: !GetAtt AppInstance.PublicDnsName
+  InstanceId:
+    Value: !Ref AppInstance
