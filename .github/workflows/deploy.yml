@@ -49,5 +49,5 @@ jobs:
             cd encurtador_url
             git pull origin main
             npm ci --omit=dev
-            pm2 startOrReload src/server.js --name encurtador_url
+            pm2 reload encurtador_url || pm2 start src/server.js --nameencurtador_url
             pm2 save
