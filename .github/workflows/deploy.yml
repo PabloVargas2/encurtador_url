@@ -34,6 +34,15 @@ jobs:
       if: github.event_name == 'push'
 
       steps:
+      - name: Verificar configuração do servidor
+        run: |
+          echo "Verificando HOST configurado..."
+          echo "HOST=$HOST"
+          echo "Testando conexão SSH..."
+          nc -vz -w 10 "$HOST" 22
+        env:
+          HOST: ${{ secrets.HOST }}
+
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -41,13 +50,22 @@ jobs:
           username: ${{ secrets.USER_NAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          envs: HOST
           script: |
-           set -e
+            set -e
+            cloud-init status --wait > /dev/null || true
+            if ! command -v pm2 > /dev/null; then
+              echo "pm2 nao encontrado: veja /var/log/cloud-init-output.log"
+              exit 1
+            fi
             if [ ! -d "encurtador_url" ]; then
-              git clone https://github.com/PabloRVargas/encurtador_url.git
+              git clone https://github.com/PabloVargas2/encurtador_url.git
             fi
             cd encurtador_url
             git pull origin main
             npm ci --omit=dev
-            pm2 reload encurtador_url || pm2 start src/server.js --name encurtador_url
+            export BASE_URL="http://$HOST:3000"
+            pm2 reload encurtador_url --update-env || pm2 start src/server.js --name encurtador_url
             pm2 save
+        env:
+          HOST: ${{ secrets.HOST }}
