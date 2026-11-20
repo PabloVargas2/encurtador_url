@@ -11,61 +11,57 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
 
-      - name: Run tests
-        run: npm test
+  infra:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push'
+    outputs:
+      host: ${{ steps.ip.outputs.host }}
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: lint code
-        run: npm run lint
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          #AWS Academy
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-2
+
+      - name: Criar/atualizar EC2
+        run: aws cloudformation deploy --template-file IaC/ec2.yml --stack-name encurtador-url --parameter-overrides KeyName=${{ secrets.KEY_NAME }} --no-fail-on-empty-changeset
+
+      - name: Pegar IP
+        id: ip
+        run: echo "host=$(aws cloudformation describe-stacks --stack-name encurtador-url --query "Stacks[0].Outputs[?OutputKey=='PublicIp'].OutputValue" --output text)" >> $GITHUB_OUTPUT
 
   deploy:
-      runs-on: ubuntu-latest
-      needs: build 
-      if: github.event_name == 'push'
-
-      steps:
-      - name: Verificar configuração do servidor
-        run: |
-          echo "Verificando HOST configurado..."
-          echo "HOST=$HOST"
-          echo "Testando conexão SSH..."
-          nc -vz -w 10 "$HOST" 22
-        env:
-          HOST: ${{ secrets.HOST }}
-
-      - name: Deploy to server via SSH
-        uses: appleboy/ssh-action@v1.2.0
+    runs-on: ubuntu-latest
+    needs: infra
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USER_NAME }}
+          host: ${{ needs.infra.outputs.host }}
+          username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          envs: HOST
           script: |
-            set -e
-            cloud-init status --wait > /dev/null || true
-            if ! command -v pm2 > /dev/null; then
-              echo "pm2 nao encontrado: veja /var/log/cloud-init-output.log"
-              exit 1
-            fi
+            cloud-init status --wait
             if [ ! -d "encurtador_url" ]; then
               git clone https://github.com/PabloVargas2/encurtador_url.git
             fi
             cd encurtador_url
             git pull origin main
             npm ci --omit=dev
-            export BASE_URL="http://$HOST:3000"
+            export BASE_URL=http://${{ needs.infra.outputs.host }}:3000
             pm2 reload encurtador_url --update-env || pm2 start src/server.js --name encurtador_url
             pm2 save
-        env:
-          HOST: ${{ secrets.HOST }}

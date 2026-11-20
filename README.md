@@ -16,77 +16,33 @@ npm start
 
 Acesse http://localhost:3000 para usar a página web.
 
-Para desenvolvimento, `npm run dev` reinicia o servidor automaticamente a cada alteração.
-
 ## Scripts
 
-| Comando | O que faz |
-|---|---|
-| `npm start` | Inicia o servidor |
-| `npm run dev` | Inicia o servidor reiniciando a cada alteração |
-| `npm test` | Roda os testes automatizados (Jest + Supertest) |
-| `npm run test:coverage` | Roda os testes e gera relatório de cobertura em `coverage/` |
-| `npm run lint` | Verifica o código com o ESLint |
+`npm start` -> Inicia o servidor;
+`npm run dev` -> Inicia o servidor reiniciando a cada alteração;
+`npm test` -> Roda os testes automatizados (Jest + Supertest);
+`npm run lint` -> Verifica o código com o ESLint.
 
 ## Configuração
 
 A aplicação lê as configurações de variáveis de ambiente. Os valores padrão servem para rodar localmente. Veja `.env.example`.
 
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `PORT` | `3000` | Porta em que o servidor escuta |
-| `BASE_URL` | `http://localhost:PORT` | Endereço público usado para montar os links curtos |
-| `CODE_LENGTH` | `6` | Tamanho dos códigos gerados automaticamente |
+## CI/CD e infraestrutura (AWS)
 
-Exemplo: `PORT=8080 BASE_URL=https://meu-dominio.com npm start`
+O pipeline fica em `.github/workflows/deploy.yml` e roda no GitHub Actions:
 
-## API
+1. **build**: instala as dependências, roda os testes e o lint (em todo push e pull request na `main`).
+2. **infra**: cria ou atualiza uma instância EC2 com o CloudFormation, usando o template `IaC/ec2.yml`, e pega o IP público dela (só em push na `main`).
+3. **deploy**: acessa a instância por SSH, baixa o código e inicia a aplicação com o pm2.
 
-### `POST /api/links`
-Cria um link curto. O campo `alias` é opcional.
+No primeiro push o stack `encurtador-url` é criado, com Security Group, instância EC2 e Elastic IP. Nos pushes seguintes a instância é reaproveitada e só o código é atualizado.
 
-```bash
-curl -X POST http://localhost:3000/api/links \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://github.com", "alias": "github"}'
-```
+A região usada é `us-east-2`. Para usar outra, altere `aws-region` no workflow.
 
-Resposta `201`:
-```json
-{
-  "code": "github",
-  "url": "https://github.com",
-  "clicks": 0,
-  "createdAt": "2026-10-24T22:52:54.916Z",
-  "shortUrl": "http://localhost:3000/github"
-}
-```
+**AWS Academy:** as credenciais ficam em AWS Details → AWS CLI e expiram a cada sessão do lab. Atualize os três secrets da AWS antes de rodar o pipeline. A chave `.pem` é baixada no mesmo painel. Verifique se a região permitida no seu lab é a mesma configurada no workflow.
 
-Erros: `400` (URL ou apelido inválido), `409` (apelido já em uso).
-
-### `GET /:code`
-Redireciona (`302`) para a URL original e soma um clique. Retorna `404` se o código não existir.
-
-### `GET /api/links/:code`
-Retorna os dados do link, incluindo o número de cliques.
-
-### `GET /health`
-Verificação de saúde. Responde `{"status": "ok", "uptime": <segundos>}`.
-
-## Estrutura
-
-```
-src/
-  app.js               rotas e regras da aplicação
-  server.js            inicializa o servidor HTTP
-  config.js            leitura das variáveis de ambiente
-  shortener.js         geração e validação de códigos e URLs
-  store/memoryStore.js armazenamento em memória
-public/
-  index.html           página web
-tests/                 testes automatizados
-```
+Depois do deploy, a aplicação fica disponível em `http://<IP-da-instância>:3000`. O IP aparece na aba Outputs do stack `encurtador-url` no console do CloudFormation.
 
 ## Armazenamento
 
-Os links ficam em memória e se perdem quando o servidor reinicia. Para persistir os dados, crie outro módulo em `src/store/` com os mesmos métodos assíncronos (`get`, `has`, `save`, `incrementClicks`) usando um banco de dados e passe-o para `createApp({ store })`. O restante do código não precisa mudar.
+Os links ficam em memória e se perdem quando o servidor reinicia.
